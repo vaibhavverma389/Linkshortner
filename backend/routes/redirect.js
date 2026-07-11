@@ -132,7 +132,7 @@ router.get('/:code', async (req, res) => {
             <span class="icon">🔍</span>
             <h1>Link Not Found</h1>
             <p>The shortened URL you are trying to visit does not exist, was typed incorrectly, or has expired.</p>
-            <a href="http://localhost:5173">Go to LinkShortener</a>
+            <a href="${process.env.BASE_URL || 'http://localhost:5173'}">Go to LinkShortener</a>
           </div>
         </body>
         </html>
