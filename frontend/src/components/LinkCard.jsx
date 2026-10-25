@@ -6,11 +6,28 @@ const LinkCard = ({ url, onDelete, addToast }) => {
   const [copied, setCopied] = useState(false);
   const [showQR, setShowQR] = useState(false);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(url.shortUrl);
-    setCopied(true);
-    addToast('Copied link to clipboard!', 'success');
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(url.shortUrl);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = url.shortUrl;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+      }
+      setCopied(true);
+      addToast('Copied link to clipboard!', 'success');
+      setTimeout(() => setCopied(false), 2000);
+    } catch (_) {
+      addToast('Failed to copy link to clipboard', 'error');
+    }
   };
 
   const downloadQRCode = () => {

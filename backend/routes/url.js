@@ -4,6 +4,19 @@ import Url from '../models/Url.js';
 
 const router = express.Router();
 
+const RESERVED_SLUGS = new Set([
+  'api',
+  'health',
+  'favicon.ico',
+  'robots.txt',
+  'sitemap.xml',
+  'stats',
+  'shorten',
+  'admin',
+  'null',
+  'undefined'
+]);
+
 // Helper to generate a random 6-char slug
 const generateSlug = (length = 6) => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -20,12 +33,14 @@ router.post('/shorten', async (req, res) => {
   const { originalUrl, customCode } = req.body;
 
   // Validate request
-  if (!originalUrl) {
+  if (!originalUrl || typeof originalUrl !== 'string') {
     return res.status(400).json({ error: 'Original URL is required' });
   }
 
+  const trimmedUrl = originalUrl.trim();
+
   // Validate original URL format
-  if (!validUrl.isWebUri(originalUrl)) {
+  if (!validUrl.isWebUri(trimmedUrl)) {
     return res.status(400).json({ error: 'Invalid URL format. Please include http:// or https://' });
   }
 
@@ -33,30 +48,39 @@ router.post('/shorten', async (req, res) => {
     let shortCode;
 
     // Handle custom alias
-    if (customCode) {
+    if (customCode && typeof customCode === 'string') {
+      const trimmedCustom = customCode.trim();
+
+      // Check against reserved routes
+      if (RESERVED_SLUGS.has(trimmedCustom.toLowerCase())) {
+        return res.status(400).json({ error: 'This custom alias is reserved by the system. Please pick another.' });
+      }
+
       // Validate custom slug format (3 to 15 chars, alphanumeric, hyphens, underscores)
       const codeRegex = /^[a-zA-Z0-9-_]{3,15}$/;
-      if (!codeRegex.test(customCode)) {
+      if (!codeRegex.test(trimmedCustom)) {
         return res.status(400).json({ 
           error: 'Custom alias must be 3-15 characters long and contain only letters, numbers, hyphens (-) or underscores (_).' 
         });
       }
 
       // Check if custom alias is already taken
-      const existingUrl = await Url.findOne({ shortCode: customCode });
+      const existingUrl = await Url.findOne({ shortCode: trimmedCustom });
       if (existingUrl) {
         return res.status(400).json({ error: 'Custom alias is already in use' });
       }
-      shortCode = customCode;
+      shortCode = trimmedCustom;
     } else {
       // Generate a unique 6-char slug
       let unique = false;
       let retries = 0;
       while (!unique && retries < 5) {
         shortCode = generateSlug(6);
-        const existing = await Url.findOne({ shortCode });
-        if (!existing) {
-          unique = true;
+        if (!RESERVED_SLUGS.has(shortCode.toLowerCase())) {
+          const existing = await Url.findOne({ shortCode });
+          if (!existing) {
+            unique = true;
+          }
         }
         retries++;
       }
@@ -67,23 +91,28 @@ router.post('/shorten', async (req, res) => {
 
     // Create and save database record
     const newUrl = new Url({
-      originalUrl,
+      originalUrl: trimmedUrl,
       shortCode,
       createdAt: new Date(),
     });
 
     await newUrl.save();
 
-    res.status(201).json({
+    const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
+
+    return res.status(201).json({
       originalUrl: newUrl.originalUrl,
       shortCode: newUrl.shortCode,
-      shortUrl: `${process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`}/${newUrl.shortCode}`,
+      shortUrl: `${baseUrl}/${newUrl.shortCode}`,
       clicks: newUrl.clicks,
       createdAt: newUrl.createdAt,
     });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ error: 'This alias was just taken. Please try another one.' });
+    }
     console.error('Shorten Error:', error);
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error occurred while shortening the link.' });
   }
 });
 
@@ -96,20 +125,33 @@ router.post('/urls/stats', async (req, res) => {
     return res.status(400).json({ error: 'A list of short codes is required' });
   }
 
+  // Sanitize and deduplicate incoming codes
+  const uniqueCodes = Array.from(new Set(codes.filter(c => typeof c === 'string' && c.trim().length > 0)));
+
+  if (uniqueCodes.length === 0) {
+    return res.json([]);
+  }
+
   try {
-    const urls = await Url.find({ shortCode: { $in: codes } });
+    const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
+
+    const urls = await Url.find({ shortCode: { $in: uniqueCodes } })
+      .select('originalUrl shortCode clicks createdAt lastAccessed -_id')
+      .lean();
+
     const formattedUrls = urls.map(url => ({
       originalUrl: url.originalUrl,
       shortCode: url.shortCode,
-      shortUrl: `${process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`}/${url.shortCode}`,
-      clicks: url.clicks,
+      shortUrl: `${baseUrl}/${url.shortCode}`,
+      clicks: url.clicks || 0,
       createdAt: url.createdAt,
       lastAccessed: url.lastAccessed,
     }));
-    res.json(formattedUrls);
+
+    return res.json(formattedUrls);
   } catch (error) {
     console.error('Stats Sync Error:', error);
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error occurred while fetching analytics.' });
   }
 });
 

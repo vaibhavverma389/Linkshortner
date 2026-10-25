@@ -17,16 +17,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// API Routes
-app.use('/api', urlRoutes);
-
-// Redirect Routes (must be loaded after API to not interfere)
-app.use('/', redirectRoutes);
-
-// Health Check Route
+// Health Check Route (Must be mounted before redirect routes)
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'API is running' });
 });
+
+// API Routes
+app.use('/api', urlRoutes);
+
+// Redirect Routes (Wildcard redirection route mounted last)
+app.use('/', redirectRoutes);
 
 const PORT = process.env.PORT || 5000;
 

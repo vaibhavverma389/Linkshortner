@@ -8,18 +8,29 @@ const router = express.Router();
 router.get('/:code', async (req, res) => {
   const { code } = req.params;
 
+  // Skip favicon or special static requests
+  if (code === 'favicon.ico' || code === 'robots.txt') {
+    return res.status(404).end();
+  }
+
   try {
-    const url = await Url.findOne({ shortCode: code });
+    // Atomically increment clicks and update lastAccessed timestamp
+    const url = await Url.findOneAndUpdate(
+      { shortCode: code },
+      {
+        $inc: { clicks: 1 },
+        $set: { lastAccessed: new Date() },
+      },
+      { new: true }
+    );
 
     if (url) {
-      // Increment clicks and update access time
-      url.clicks += 1;
-      url.lastAccessed = new Date();
-      await url.save();
-
       // Perform HTTP 302 temporary redirect
       return res.redirect(url.originalUrl);
     } else {
+      // Determine client application URL for fallback return button
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+
       // Return a themed HTML page for 404
       return res.status(404).send(`
         <!DOCTYPE html>
@@ -132,7 +143,7 @@ router.get('/:code', async (req, res) => {
             <span class="icon">🔍</span>
             <h1>Link Not Found</h1>
             <p>The shortened URL you are trying to visit does not exist, was typed incorrectly, or has expired.</p>
-            <a href="${process.env.BASE_URL || 'http://localhost:5173'}">Go to LinkShortener</a>
+            <a href="${clientUrl}">Go to LinkShortener</a>
           </div>
         </body>
         </html>

@@ -155,6 +155,7 @@ Create a `.env` file in the `backend/` directory:
 PORT=5000
 MONGO_URI=mongodb://127.0.0.1:27017/linkshort
 BASE_URL=http://localhost:5000
+CLIENT_URL=http://localhost:5173
 ```
 > *For cloud databases (e.g. Atlas), replace `MONGO_URI` with your connection string: `mongodb+srv://<user>:<password>@cluster.mongodb.net/linkshort?retryWrites=true&w=majority`.*
 
